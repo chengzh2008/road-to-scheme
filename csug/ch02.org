@@ -1,0 +1,164 @@
+#+title: Using Chez Scheme
+
+* Interacting with Chez Scheme
+- The reader used by the REPL is a full-blown "expression editor".
+- upper arrow with ^L (control L) to show previous definition
+- ^J forces the expression to be entered immediately no matter where the cursor is
+- debug-on-exception command-line option to invoke debug directly
+- load a file `load "file_path"`
+- Chez Scheme compiles source forms as it sees them to machine code (Just in time)
+- `compile-file` can be used to compile a file
+- or through command line
+  #+begin_src bash
+   echo '(compile-file "test.ss")' | scheme -q
+  #+end_src
+- desirable to force the default exception handler to exit immediately to the shell
+  #+begin_src bash
+   echo '(reset-handler abort) (compile-file "finename")' | scheme -q
+  #+end_src
+* Expression Editor
+- some key-bindings for the repl
+* The Interactive Environment
+- interaction environment(top-level), which is a mutable environment that initially holds bindings only for built-in keywords and primitives.
+- the default interaction environment used for any code out side of an RNRS top-level program or library contains all of the bindings of the (chezscheme) library (or scheme module)
+  #+begin_src scheme
+  (= 3)
+  #+end_src
+
+  #+RESULTS:
+  : #t
+
+- to replace these with bindings strictly compatible with RNRS
+  #+begin_src scheme
+  (import (rnrs)
+          (rnrs eval)
+          (rnrs mutable-pairs)
+          (rnrs r5rs))
+  #+end_src
+- to obtain an interaction environment that contains all and only RNRS bindings, use the following
+  #+begin_src scheme
+  (interaction-environment
+   (copy-environment
+    (environment
+     '(rnrs)
+     '(rnrs eval)
+     '(rnrs mutable-pairs)
+     '(rnrs mutable-strings)
+     '(rnrs r5rs))
+    #t))
+  #+end_src
+- to be useful for most purposes, library and import should also be included from (chezscheme) library
+  with strictly RNRS bindings, the following will throw exception
+  #+begin_src scheme
+   (= 3)
+  #+end_src
+
+  # RESULTS
+  #+begin_src
+  Exception: incorrect argument count in call (= 3)
+  Type (debug) to enter the debugger.
+  #+end_src
+- variables that name built-in procedures are read-only and cannot be assigned
+  #+begin_src scheme
+  (set! cons +)
+  ;; Exception: attempt to assign immutable variable cons
+  #+end_src
+- turn built-in variable into a mutable one
+  #+begin_src scheme
+  (define cons (let () (import scheme) cons))
+  #+end_src
+* Using Libraries and Top-Level Programs
+- an r6rs library can be
+  1. defined directly in the REPL
+  2. loaded explicitly from a file via =load= or =load-library=
+  3. loaded implicitly from a vile via =import=
+- the set of directories searched by =import= is determined by the =library-directories=
+- the set of extensions is determined by the =library-extensions=
+  #+begin_src bash
+  > (library-directories)
+  (("/Users/zcheng/code/scheme/lib"
+  .
+  "/Users/zcheng/code/scheme/lib")
+  ("." . "."))
+  #+end_src
+- difference between =compile-file= and =compile-library=
+  the latter treats the source file as if it were prefixed by an implicit #!r6rs
+- =compile-library= can be used in batch mode
+  #+begin_src bash
+  echo '(compile-library "filename")' | scheme -q
+  #+end_src
+- =top-level-program= can be used in REPL
+  #+begin_src scheme
+  (top-level-program
+   (import (rnrs))
+    (display "what's going on?\n"))
+  #+end_src
+- top-level program can be loaded via =load-program=, which is self-contained. It can see only the bindings made visible by the leading import form
+- =compile-program= can be used in batch mode
+  #+begin_src bash
+  echo '(compile-program "filename")' | scheme -q
+  #+end_src
+* Scheme Shell Scripts
+- use scheme --script
+#+begin_src scheme
+#! /usr/bin/scheme --script
+(let ([args (cdr (command-line))])
+  (unless (null? args)
+    (let-values ([(newline? args)
+                  (if (equal? (car args) "-n")
+                      (values #f (cdr args))
+                      (values #t args))])
+      (do ([args args (cdr args)] [sep "" " "])
+          ((null? args))
+        (printf "~a~a" sep (car args)))
+      (when newline? (newline)))))
+
+#+end_src
+- use scheme --program (or scheme-script)
+#+begin_src scheme
+#! /usr/bin/scheme --program
+(import (rnrs))
+(let ([args (cdr (command-line))])
+  (unless (null? args)
+    (let-values ([(newline? args)
+                  (if (equal? (car args) "-n")
+                      (values #f (cdr args))
+                      (values #t args))])
+      (do ([args args (cdr args)] [sep "" " "])
+          ((null? args))
+        (display sep)
+        (display (car args)))
+      (when newline? (newline)))))
+#+end_src
+- for external libraries used by top-level program, --libdirs can be used to specify which source and object directories to search
+* Optimization
+- avoid the use of top-level (interaction-environment) bindings for production
+- once an application code has been placed into a single top-level program or into a top-level program and one or more libraries, the code can be loaded via load-program or compiled via compile-program or compile-library. do not use compile-file
+- set optimize level
+  #+begin_src scheme
+  (parameterize ([optimize-level 3]) (compile-program "filename"))
+  #+end_src
+  or in batch mode
+  #+begin_src bash
+  echo '(compile-program "filename")' | scheme -q --optimize-level 3
+  #+end_src
+* Building and Distributing Applications
+- useful as a stand-alone Scheme system, Petite Chez Scheme is a run-time system for compiled Chez Scheme applications
+- petite chez scheme, interpreter-based but not necessarily slow
+  1. the run-time system is fully compiled
+  2. the interpreter itself is a compiled scheme application
+  3. the interpreter employs a preprocessor that converts the code into a form that can be interpreted efficiently
+- disable inspector information with =generate-inspector-information= only for production code
+- concatenate object files using =concatenate-object-files=
+- run the application by loading the composite object file
+  #+begin_src bash
+  petite app.so
+  #+end_src
+- boot files are created with =make-boot-file=
+- an example of creating and running a simple "echo" application
+  #+begin_src bash
+  echo '(suppress-greeting #t)' > myecho.ss
+  echo '(scheme-start (lambda fns (printf "~{~^ ~}\n" fns)))' >> myecho.ss
+  echo '(compile-file "myecho.ss") (make-boot-file "myecho.boot" (quote ("petite")) "myecho.so")' | scheme -q
+  scheme -b ./myecho.boot hello world
+  #+end_src

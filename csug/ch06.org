@@ -1,0 +1,58 @@
+#+title: Control Structures
+
+* Conditions
+- =exclusive-cond=
+- =case=
+  #+begin_src scheme
+(let ([ls '(ii iv)])
+  (case (car ls)
+    [i 1]
+    [ii 2]
+    [iii 3]
+    [(iiii iv) 4]
+    [else 'out-of-range]))
+;; ==> 2
+
+(define p
+  (lambda (x)
+    (case x
+      [("abc" "def") 'one]
+      [((a b c)) 'two]
+      [else #f])))
+
+(p (string #\d #\e #\f))
+;; ==> one
+(p '(a b c))
+;; ==> two
+  #+end_src
+- =record-case=
+  #+begin_src scheme
+(define calc
+  (lambda (x)
+    (record-case x
+      [(add) (x y) (+ x y)]
+      [(sub) (x y) (- x y)]
+      [(mul) (x y) (* x y)]
+      [(div) (x y) (/ x y)]
+      [else (assertion-violationf 'calc "invalid expression ~s" x)])))
+
+(calc '(add 3 4))
+;; ==> 7
+(calc '(div 3 4))
+;; ==> 3/4
+  #+end_src
+* Mapping and Folding
+- =ormap=, =andmap=
+* Continuations
+- =engine=
+  #+begin_src scheme
+(define eng
+  (make-engine
+    (lambda () 3)))
+
+(eng 10
+     (lambda (ticks value) (list ticks value))
+     (lambda (x) x))
+;; ==> 3
+  #+end_src
+

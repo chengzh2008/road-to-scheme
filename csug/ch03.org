@@ -1,0 +1,36 @@
+#+title: Debugging
+
+* Tracing
+- =trace-lambda=
+  #+begin_src scheme
+    (define half
+    (trace-lambda half (x)
+        (cond
+        [(zero? x) 0]
+        [(odd? x) (half (- x 1))]
+        [(even? x) (+ (half (- x 1)) 1)])))
+    (half 5)
+  #+end_src
+  the call (half 5) has the same indentation as the call (half 4) (tail call)
+  #+begin_src
+    |(half 5)
+    |(half 4)
+    | (half 3)
+    | (half 2)
+    | |(half 1)
+    | |(half 0)
+    | |0
+    | 1
+    |2
+  #+end_src
+- =trace-let=
+  #+begin_src scheme
+    (define half
+      (trace-lambda half (x)
+        (cond
+         [(zero? x) 0]
+         [(odd? x) (half (trace-let decr-value () (- x 1)))]
+         [(even? x) (+ (half (- x 1)) 1)])))
+    (half 5)
+  #+end_src
+- =trace= and =untrace=

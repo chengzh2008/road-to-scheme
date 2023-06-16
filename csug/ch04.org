@@ -1,0 +1,101 @@
+#+title: Foreign Interface
+
+* Subprocess communication
+- =system= or =process=
+  #+begin_src scheme
+  (system "ls -l")
+  #+end_src
+* Calling out of Scheme
+- =foreign-procedure=  allow scheme code to call c or c-compatible procedures
+  #+begin_src scheme
+  (define c-sleep
+    (foreign-procedure __collect_safe "sleep" (unsigned) unsigned))
+  (c-sleep 10) ; sleeps for 10 seconds without blocking other threads
+  (display "done")
+  #+end_src
+- template can be used in the creation of several foreign procedures
+  #+begin_src scheme
+(define double->double
+  (lambda (proc-name)
+    (foreign-procedure proc-name
+      (double)
+      double)))
+
+(define log10 (double->double "log10"))
+(define gamma (double->double "gamma"))
+  #+end_src
+* Calling into Scheme
+- =foreign-procedure= allow c or c-compatible code to call scheme procedures
+  #+begin_src scheme
+(let ([x (foreign-callable
+           (lambda (x y) (pretty-print (cons x (* y 2))))
+           (string integer-32) void)])
+  (lock-object x)
+  (foreign-callable-entry-point x))
+  #+end_src
+* Continuations and Foreign Calls
+- =with-exit-proc=
+  #+begin_src scheme
+(define with-exit-proc
+  (lambda (p)
+    (define th (lambda () (call/cc p)))
+    (define-ftype ->ptr (function () ptr))
+    (let ([fptr (make-ftype-pointer ->ptr th)])
+      (let ([v ((ftype-ref ->ptr () fptr))])
+        (unlock-object
+          (foreign-callable-code-object
+            (ftype-pointer-address fptr)))
+        v))))
+  #+end_src
+* Foreign Data
+- =foreign-alloc=
+- =foreign-sizeof=
+- =foreign-free=
+  #+begin_src scheme
+(define-ftype Vec
+  (struct
+    [len int]
+    [data (array 0 double)]))
+(define make-Vec
+  (lambda (n)
+    (let ([fptr (make-ftype-pointer Vec
+                  (foreign-alloc
+                    (+ (ftype-sizeof Vec)
+                       (* (ftype-sizeof double) n))))])
+      (ftype-set! Vec (len) fptr n)
+      fptr)))
+(define x (make-Vec 100))
+(/ (- (ftype-pointer-address (ftype-&ref Vec (data 10) x))
+      (ftype-pointer-address x)
+      (ftype-sizeof int))
+   (ftype-sizeof double))
+(foreign-free (ftype-pointer-address x))
+  #+end_src
+* Providing Access to Foreign Procedures
+- =foreign-entry?=
+- =load-shared-object=
+  #+begin_src scheme
+(load-shared-object "libc.dylib")
+(define getenv
+  (foreign-procedure "getenv"
+                     (string) string))
+(getenv "HOME")
+  #+end_src
+- it can also be used to access user-created libraries
+  #+begin_src scheme
+(system "echo \"int even(n) int n; { return n == 0 || odd(n - 1); }\" > even.c")
+(system "echo \"int odd(n) int n; { return n != 0 && even(n - 1); }\" > odd.c")
+;; need to disable error and implicit-funciton-declaration warning
+(system "cc -dynamiclib -Wno-error=implicit-function-declaration -o evenodd.so even.c odd.c")
+;; The resulting ".so" file can be loaded into scheme and evne and odd made available as foreign procedures
+(load-shared-object "./evenodd.so")
+(let ([odd (foreign-procedure "odd" (integer-32) boolean)]
+      [even (foreign-procedure "even" (integer-32) boolean)])
+  (list (even 100) (odd 100)))
+  #+end_src
+* Using Other Foreign Languages
+  #+begin_src scheme
+(foreign-entry? "foo") <graphic> #f
+(foreign-entry? "=foo") <graphic> #t
+  #+end_src
+* Example: Socket Operations

@@ -1,0 +1,106 @@
+#+title: Binding Forms
+
+* Definitions
+- =begin=
+  #+begin_src scheme
+(begin
+  (define-syntax a (identifier-syntax 3))
+  (define x a))
+
+;; equivalent
+(begin
+  (define x a)
+  (define-syntax a (identifier-syntax 3)))
+  #+end_src
+  So is this
+  #+begin_src scheme
+(define-syntax define-constant
+  (syntax-rules ()
+    [(_ x e)
+     (begin
+       (define t e)
+       (define-syntax x (identifier-syntax t)))]))
+
+;; equivalent
+(define-syntax define-constant
+  (syntax-rules ()
+    [(_ x e)
+     (begin
+       (define-syntax x (identifier-syntax t))
+       (define t e))]))
+  #+end_src
+  - chez scheme extends the set of definitions to include =module=, =import=, =import-only=, =meta= and =alias=
+
+* Multiple-value Definitions
+- =define-values=
+  #+begin_src scheme
+(let ()
+  (define-values (x y) (values 1 2))
+  (list x y))
+(let ()
+  (define-values (x y . z) (values 1 2 3 4))
+  (list x y z))
+  #+end_src
+* Recursive Bindings
+- =rec=
+  #+begin_src scheme
+(map (rec sum
+       (lambda (x)
+         (if (= x 0)
+             0
+             (+ x (sum (- x 1))))))
+     '(0 1 2 3 4 5))
+
+  #+end_src
+  #+begin_src scheme
+(define cycle
+  (rec self
+    (list (lambda () self))))
+(eq? ((car cycle)) cycle)
+  #+end_src
+  =rec= can be implemented with =letrec=
+  #+begin_src scheme
+(define-syntax rec1
+  (syntax-rules ()
+    [(_ x e) (letrec ((x e)) x)]))
+
+(map (rec1 sum
+       (lambda (x)
+         (if (= x 0)
+             0
+             (+ x (sum (- x 1))))))
+     '(0 1 2 3 4 5))
+  #+end_src
+
+- =fluid-let=
+  #+begin_src scheme
+(let ([x 3])
+  (+ (fluid-let ([x 5])
+       x)
+     x))
+;; ==> 8
+  #+end_src
+  #+begin_src scheme
+(let ([x 'a])
+  (letrec ([f (lambda (y) (cons x y))])
+    (fluid-let ([x 'b])
+      (f 'c))))
+;; ==> (b . c)
+  #+end_src
+  =fluid-let= can be defined in term of =dynamic-wind=
+  #+begin_src scheme
+(define-syntax fluid-let
+  (lambda (x)
+    (syntax-case x ()
+      [(_ () b1 b2 ...) #'(let () b1 b2 ...)]
+      [(_ ((x e) ...) b1 b2 ...)
+       (andmap identifier? #'(x ...))
+       (with-syntax ([(y ...) (generate-temporaries #'(x ...))])
+         #'(let ([y e] ...)
+             (let ([swap (lambda ()
+                           (let ([t x]) (set! x y) (set! y t))
+                           ...)])
+               (dynamic-wind swap (lambda () b1 b2 ...) swap))))])))
+  #+end_src
+* Top-Level Bindings
+- =define-top-level-value= and =set-top-level-value=
